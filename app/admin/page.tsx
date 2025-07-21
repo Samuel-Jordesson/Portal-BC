@@ -8,6 +8,7 @@ export default function AdminPage() {
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -16,19 +17,57 @@ export default function AdminPage() {
     setLoading(true)
     setErrorMsg(null)
 
-    const { data, error } = await supabase.from('posts').insert([{ title, content }])
+    let imageUrl = ''
 
-    setLoading(false)
+    try {
+      // Se tiver imagem, faz o upload
+      if (imageFile) {
+        const fileExt = imageFile.name.split('.').pop()
+        const fileName = `${Date.now()}.${fileExt}`
+        const filePath = `images/${fileName}`
 
-    if (error) {
-      setErrorMsg(error.message)
-      return
+        const { error: uploadError } = await supabase.storage
+          .from('posts')
+          .upload(filePath, imageFile)
+
+        if (uploadError) {
+          throw new Error('Erro ao enviar imagem: ' + uploadError.message)
+        }
+
+        const { data: imageData } = supabase.storage
+          .from('posts')
+          .getPublicUrl(filePath)
+
+        if (!imageData?.publicUrl) {
+          throw new Error('Erro ao obter URL da imagem')
+        }
+
+        imageUrl = imageData.publicUrl
+
+      }
+
+      // Inserir post
+      const { error } = await supabase.from('posts').insert([
+        {
+          title,
+          content,
+          image_url: imageUrl || null,
+        },
+      ])
+
+      if (error) throw new Error(error.message)
+
+      // Resetar formulário
+      setTitle('')
+      setContent('')
+      setImageFile(null)
+      router.refresh()
+      alert('Post criado com sucesso!')
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Erro desconhecido')
+    } finally {
+      setLoading(false)
     }
-
-    setTitle('')
-    setContent('')
-    router.refresh() // atualiza a página inicial para mostrar o novo post
-    alert('Post adicionado com sucesso!')
   }
 
   return (
@@ -61,6 +100,21 @@ export default function AdminPage() {
             value={content}
             onChange={(e) => setContent(e.target.value)}
             required
+          />
+        </div>
+
+        <div>
+          <label htmlFor="image" className="block font-semibold mb-1">
+            Imagem (opcional)
+          </label>
+          <input
+            id="image"
+            type="file"
+            accept="image/*"
+            onChange={(e) =>
+              setImageFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)
+            }
+            className="w-full"
           />
         </div>
 
